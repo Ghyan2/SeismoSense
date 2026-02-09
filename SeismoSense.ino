@@ -139,6 +139,7 @@ void readMotion() {
     alertActive = true;
     alertStart = millis();
   }
+  delay(250);
 }
 
 /* ================= ALERT ================= */
@@ -236,11 +237,24 @@ void constrainMenu() {
 }
 
 void handleSelect() {
-  if (currentMenu == MENU_MAIN && menuIndex == 1) {
-    currentMenu = MENU_THRESHOLD;
-    menuIndex = 0;
-  } else if (currentMenu == MENU_THRESHOLD && menuIndex == 1) {
-    editingThreshold = !editingThreshold;
+  if (currentMenu == MENU_MAIN) {
+    if (menuIndex == 0) {            // Sleep selected
+      display.oled_command(SH110X_DISPLAYOFF);
+      displaySleeping = true;
+    }
+    else if (menuIndex == 1) {       // Threshold
+      currentMenu = MENU_THRESHOLD;
+      menuIndex = 0;
+    }
+    else if (menuIndex == 2) {       // Settings
+      currentMenu = MENU_SETTINGS;
+      menuIndex = 0;
+    }
+  }
+  else if (currentMenu == MENU_THRESHOLD) {
+    if (menuIndex == 1) {
+      editingThreshold = !editingThreshold;
+    }
   }
 }
 
