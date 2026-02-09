@@ -1,65 +1,64 @@
 #include <Wire.h>
-#include <MPU9250_WE.h>
+#include "I2Cdev.h"
+#include "MPU6050.h"
 
-#define SW420 23
+MPU6050 mpu;
 
-MPU9250_WE mpu(0x68);
+const int buzzer = 23;
+const float threshold = 1.5;
+int16_t ax, ay, az;
 
-// CONFIGURATION
-float threshold = 0.25;              // delta-motion threshold (g)
-unsigned long interval = 20;         // 50 Hz sampling
-unsigned long debounceTime = 800;    // SW420 debounce
-
-unsigned long lastRead = 0;
-unsigned long lastTrigger = 0;
-
-float lastResultant = 1.0;
+const int vibration = 19;  
+unsigned long alertStart = 0;
+bool alertActive = false;
+const unsigned long alertDuration = 15000; // 15 seconds
+const unsigned long beepInterval = 400; // total beep cycle (ms)
+const unsigned long beepOnTime = 200; // buzzer ON duration (ms)
 
 void setup() {
-  Wire.begin();
   Serial.begin(115200);
-  pinMode(SW420, INPUT);
+  Wire.begin(21, 22);
 
-  Serial.println("Calibrating...");
-  delay(1000);
-  mpu.autoOffsets();
+  pinMode(buzzer, OUTPUT);
+  mpu.initialize();
 
-  // === KEY SETTINGS FOR VIBRATION ===
-  mpu.setAccRange(MPU9250_ACC_RANGE_2G);
-  mpu.enableAccDLPF(true);
-  mpu.setAccDLPF(MPU9250_DLPF_1);     // LOW DLPF → vibration allowed
-  mpu.setSampleRateDivider(0);       // maximum sample rate
-
-  Serial.println("System ready.");
+  Serial.println("MPU6050 connected");
 }
 
 void loop() {
-  if (millis() - lastRead >= interval) {
-    lastRead = millis();
+  mpu.getAcceleration(&ax, &ay, &az);
 
-    // Get acceleration in g
-    xyzFloat gVal = mpu.getGValues();
+  float x = ax / 16384.0;
+  float y = ay / 16384.0;
+  float z = az / 16384.0 - 1.0;
 
-    // Resultant acceleration
-    float resultantG = mpu.getResultantG(gVal);
+  float magnitude = abs(sqrt((x * x) + (y * y) + (z * z)));
 
-    // DELTA-BASED MOTION (key fix)
-    float deltaMotion = fabs(resultantG - lastResultant);
-    lastResultant = resultantG;
+  bool vibrationDetected = digitalRead(vibration) == HIGH;
 
-    // Earthquake detection
-    if (digitalRead(SW420) == HIGH && deltaMotion > threshold) {
-      if (millis() - lastTrigger > debounceTime) {
-        Serial.println("EQ OCCURRED");
-        lastTrigger = millis();
+  Serial.println("X: "+ String(x) +" Y: "+ String(y) +" Z: "+ String(z) +" | M: "+ String(magnitude));
+  delay(100);
+
+  if ((magnitude > threshold && vibrationDetected) && !alertActive) {
+    alertActive = true;
+    alertStart = millis();
+  }
+
+  // Handle alert pattern
+  if (alertActive) {
+    unsigned long elapsed = millis() - alertStart;
+    if (elapsed < alertDuration) {
+      // pattern: 200ms ON, 200ms OFF
+      if ((elapsed % beepInterval) < beepOnTime) {
+        digitalWrite(buzzer, HIGH);
+      } else {
+        digitalWrite(buzzer, LOW);
       }
+    } else {
+      digitalWrite(buzzer, LOW);
+      alertActive = false;
     }
-
-    // Debug output
-    Serial.print("X: "); Serial.print(gVal.x, 3);
-    Serial.print(" | Y: "); Serial.print(gVal.y, 3);
-    Serial.print(" | Z: "); Serial.print(gVal.z, 3);
-    Serial.print(" | ΔMotion(g): ");
-    Serial.println(deltaMotion, 3);
+  } else {
+    digitalWrite(buzzer, LOW);
   }
 }
