@@ -60,6 +60,7 @@ int ackCount = 0;
 String registeredNumbers[MAX_REGISTERED_NUMBERS];
 int registeredNumberCount = 0;
 unsigned long lastCloudTick = 0;
+bool smsAlertsEnabled = true;
 
 /* ===================== Detection ===================== */
 MPU6050 mpu;
@@ -121,6 +122,8 @@ bool sendHttp(const char* method, const String& body, int& code, String& resp);
 bool postEventTelemetry(float magnitude, unsigned long eventTimestamp);
 void pollDownlink();
 void acknowledgeCommands();
+bool sendSmsToNumber(const String& number, const String& message);
+void sendSmsAlertsToRegisteredNumbers(float magnitude, unsigned long eventTimestamp);
 
 void handleButtons();
 void drawMainMenu();
@@ -187,6 +190,7 @@ void loop() {
 
     if (eventToReport) {
       if (postEventTelemetry(lastMagnitude, lastEventTime)) {
+        sendSmsAlertsToRegisteredNumbers(lastMagnitude, lastEventTime);
         eventToReport = false;
       }
     }
@@ -450,6 +454,27 @@ void handleAlert() {
     alertActive = false;
     digitalWrite(BUZZER_PIN, LOW);
     digitalWrite(LED_PIN, LOW);
+  }
+}
+
+
+bool sendSmsToNumber(const String& number, const String& message) {
+  // TODO: replace this stub with your GSMsms.h integration.
+  // Example target call: gsmSms.sendSMS(number.c_str(), message.c_str());
+  if (number.length() == 0) return false;
+
+  Serial.printf("[SMS] to=%s msg=%s\n", number.c_str(), message.c_str());
+  return true;
+}
+
+void sendSmsAlertsToRegisteredNumbers(float magnitude, unsigned long eventTimestamp) {
+  if (!smsAlertsEnabled || registeredNumberCount == 0) return;
+
+  String message = "SeismoSense Alert M=" + String(magnitude, 2) +
+                   " T=" + String(eventTimestamp);
+
+  for (int i = 0; i < registeredNumberCount; i++) {
+    sendSmsToNumber(registeredNumbers[i], message);
   }
 }
 
