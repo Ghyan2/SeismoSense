@@ -53,9 +53,11 @@ const char* DEVICE_API_KEY = "fe1cf60d-d894-4f4e-b0cc-6e518f080294";
 const unsigned long FETCH_INTERVAL_MS = 10000;
 
 WiFiClientSecure secureClient;
-String ackIds[10];
+const int MAX_ACK_IDS = 10;
+const int MAX_REGISTERED_NUMBERS = 10;
+String ackIds[MAX_ACK_IDS];
 int ackCount = 0;
-String registeredNumbers[10];
+String registeredNumbers[MAX_REGISTERED_NUMBERS];
 int registeredNumberCount = 0;
 unsigned long lastCloudTick = 0;
 
@@ -521,12 +523,18 @@ void pollDownlink() {
   auto err = deserializeJson(doc, resp);
   if (err) return;
 
-  registeredNumberCount = 0;
   JsonArray nums = doc["phone_numbers"].as<JsonArray>();
   if (!nums.isNull()) {
+    registeredNumberCount = 0;
     for (JsonVariant numVar : nums) {
-      if (registeredNumberCount >= 10) break;
-      const char* number = numVar["phone_number"] | numVar.as<const char*>();
+      if (registeredNumberCount >= MAX_REGISTERED_NUMBERS) break;
+
+      const char* number = nullptr;
+      if (numVar.is<const char*>()) number = numVar.as<const char*>();
+      if (!number || strlen(number) == 0) number = numVar["phone_number"] | "";
+      if (!number || strlen(number) == 0) number = numVar["number"] | "";
+      if (!number || strlen(number) == 0) number = numVar["value"] | "";
+
       if (number && strlen(number) > 0) {
         registeredNumbers[registeredNumberCount++] = String(number);
       }
@@ -557,7 +565,7 @@ void pollDownlink() {
       }
     }
 
-    if (strlen(id) > 0 && ackCount < 10) ackIds[ackCount++] = String(id);
+    if (strlen(id) > 0 && ackCount < MAX_ACK_IDS) ackIds[ackCount++] = String(id);
   }
 }
 
