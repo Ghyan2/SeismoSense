@@ -50,11 +50,13 @@ const char* WIFI_PASS = "PLDTWIFIm7enk";
 const char* SUPABASE_FUNCTION_URL =
   "https://saybcjfzpipmrhipllqd.supabase.co/functions/v1/esp32-api";
 const char* DEVICE_API_KEY = "fe1cf60d-d894-4f4e-b0cc-6e518f080294";
-const unsigned long TELEMETRY_INTERVAL_MS = 15000;
+const unsigned long FETCH_INTERVAL_MS = 10000;
 
 WiFiClientSecure secureClient;
 String ackIds[10];
 int ackCount = 0;
+String registeredNumbers[10];
+int registeredNumberCount = 0;
 unsigned long lastCloudTick = 0;
 
 /* ===================== Detection ===================== */
@@ -114,7 +116,7 @@ unsigned long lastRightPressMs = 0;
 /* ===================== Helpers ===================== */
 void ensureWiFi();
 bool sendHttp(const char* method, const String& body, int& code, String& resp);
-void postTelemetry(bool forceEvent);
+bool postEventTelemetry(float magnitude, unsigned long eventTimestamp);
 void pollDownlink();
 void acknowledgeCommands();
 
@@ -174,12 +176,17 @@ void loop() {
   ensureWiFi();
   if (WiFi.status() == WL_CONNECTED) {
     unsigned long now = millis();
-    if (now - lastCloudTick >= TELEMETRY_INTERVAL_MS || eventToReport) {
+
+    if (now - lastCloudTick >= FETCH_INTERVAL_MS) {
       lastCloudTick = now;
-      postTelemetry(eventToReport);
       pollDownlink();
       acknowledgeCommands();
-      eventToReport = false;
+    }
+
+    if (eventToReport) {
+      if (postEventTelemetry(lastMagnitude, lastEventTime)) {
+        eventToReport = false;
+      }
     }
   }
 
@@ -457,6 +464,12 @@ void ensureWiFi() {
 }
 
 bool sendHttp(const char* method, const String& body, int& code, String& resp) {
+  if (WiFi.status() != WL_CONNECTED) {
+    code = -1;
+    resp = "";
+    return false;
+  }
+
   HTTPClient http;
   http.begin(secureClient, SUPABASE_FUNCTION_URL);
   http.addHeader("x-api-key", DEVICE_API_KEY);
@@ -478,41 +491,47 @@ bool sendHttp(const char* method, const String& body, int& code, String& resp) {
   return true;
 }
 
-void postTelemetry(bool forceEvent) {
-  StaticJsonDocument<512> doc;
-  doc["magnitude"] = lastMagnitude;
-  doc["mode"] = (currentMode == MAGNITUDE) ? "magnitude" : "sta_lta";
-  doc["threshold"] = (currentMode == MAGNITUDE) ? magnitudeThreshold : ratioThreshold;
-  doc["alert_active"] = alertActive;
-  doc["event"] = forceEvent;
+bool postEventTelemetry(float magnitude, unsigned long eventTimestamp) {
+  if (WiFi.status() != WL_CONNECTED) return false;
 
-  JsonObject metadata = doc.createNestedObject("metadata");
-  metadata["ratio"] = lastRatio;
-  metadata["sta"] = lastSta;
-  metadata["lta"] = lastLta;
-  metadata["free_heap"] = ESP.getFreeHeap();
-  metadata["wifi_rssi"] = WiFi.RSSI();
+  StaticJsonDocument<256> doc;
+  doc["magnitude"] = magnitude;
+  doc["timestamp"] = eventTimestamp;
 
   String body;
   serializeJson(doc, body);
 
   int code = 0;
   String resp;
-  sendHttp("POST", body, code, resp);
+  bool ok = sendHttp("POST", body, code, resp);
 
-  Serial.printf("[POST] code=%d\\n", code);
+  Serial.printf("[POST event] code=%d\n", code);
+  return ok && code >= 200 && code < 300;
 }
 
 void pollDownlink() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
   int code = 0;
   String resp;
-  sendHttp("GET", "", code, resp);
-
-  if (code != 200) return;
+  bool ok = sendHttp("GET", "", code, resp);
+  if (!ok || code != 200) return;
 
   DynamicJsonDocument doc(4096);
   auto err = deserializeJson(doc, resp);
   if (err) return;
+
+  registeredNumberCount = 0;
+  JsonArray nums = doc["phone_numbers"].as<JsonArray>();
+  if (!nums.isNull()) {
+    for (JsonVariant numVar : nums) {
+      if (registeredNumberCount >= 10) break;
+      const char* number = numVar["phone_number"] | numVar.as<const char*>();
+      if (number && strlen(number) > 0) {
+        registeredNumbers[registeredNumberCount++] = String(number);
+      }
+    }
+  }
 
   ackCount = 0;
   JsonArray cmds = doc["pending_commands"].as<JsonArray>();
@@ -543,7 +562,7 @@ void pollDownlink() {
 }
 
 void acknowledgeCommands() {
-  if (ackCount == 0) return;
+  if (ackCount == 0 || WiFi.status() != WL_CONNECTED) return;
 
   StaticJsonDocument<512> doc;
   JsonArray arr = doc.createNestedArray("acknowledged_command_ids");
@@ -554,7 +573,7 @@ void acknowledgeCommands() {
 
   int code = 0;
   String resp;
-  sendHttp("PATCH", body, code, resp);
+  bool ok = sendHttp("PATCH", body, code, resp);
 
-  if (code == 200) ackCount = 0;
+  if (ok && code == 200) ackCount = 0;
 }
