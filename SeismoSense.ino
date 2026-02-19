@@ -99,6 +99,7 @@ unsigned long lastEventTime = 0;
 unsigned long alertStart = 0;
 bool alertActive = false;
 bool eventToReport = false;
+bool displaySleeping = false;
 
 /* ===================== Menu ===================== */
 enum MenuState { MAIN_MENU, THRESHOLD_MENU };
@@ -129,6 +130,7 @@ void handleButtons();
 void drawMainMenu();
 void drawThresholdMenu();
 void drawStatusBar();
+void drawEventScreen();
 
 void updateSTA(float value);
 void updateLTA(float value);
@@ -174,9 +176,12 @@ void loop() {
   sampleSensors();
   handleAlert();
 
-  if (currentMenu == MAIN_MENU) drawMainMenu();
-  else drawThresholdMenu();
-  display.display();
+  if (!displaySleeping || alertActive) {
+    if (alertActive) drawEventScreen();
+    else if (currentMenu == MAIN_MENU) drawMainMenu();
+    else drawThresholdMenu();
+    display.display();
+  }
 
   ensureWiFi();
   if (WiFi.status() == WL_CONNECTED) {
@@ -264,6 +269,19 @@ void drawThresholdMenu() {
   gfx->drawBitmap(51, 45, image_Layer_11_copy_1_bits, 5, 6, SH110X_WHITE);
 }
 
+void drawEventScreen() {
+  display.clearDisplay();
+  gfx->setTextWrap(false);
+  gfx->setCursor(2, 2);
+  gfx->println("SEISMIC EVENT");
+
+  drawStatusBar();
+  gfx->setCursor(8, 24);
+  gfx->print("Magnitude:");
+  gfx->setCursor(8, 36);
+  gfx->print(lastMagnitude, 3);
+}
+
 void handleButtons() {
   bool left = digitalRead(BUTTON_LEFT);
   bool mid = digitalRead(BUTTON_MID);
@@ -317,9 +335,8 @@ void handleButtons() {
     } else {
       if (currentMenu == MAIN_MENU) {
         if (cursorPosition == 0) {
-          display.oled_command(SH110X_DISPLAYOFF);
-          delay(500);
-          display.oled_command(SH110X_DISPLAYON);
+          displaySleeping = !displaySleeping;
+          display.oled_command(displaySleeping ? SH110X_DISPLAYOFF : SH110X_DISPLAYON);
         } else if (cursorPosition == 1) {
           currentMenu = THRESHOLD_MENU;
           cursorPosition = 0;
@@ -427,6 +444,12 @@ void detectSTAEvent(float ratio, float signal, int swState, float magnitude) {
 }
 
 void startAlert(float magnitude) {
+  if (displaySleeping) {
+    displaySleeping = false;
+    display.oled_command(SH110X_DISPLAYON);
+  }
+
+  lastMagnitude = magnitude;
   alertActive = true;
   alertStart = millis();
   lastEventTime = millis();
