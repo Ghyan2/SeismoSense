@@ -13,13 +13,13 @@
 #define I2C_SDA_PIN 21
 #define I2C_SCL_PIN 22
 
-#define SW420_PIN 19
+#define SW420_PIN 17
 #define BUZZER_PIN 23
-#define LED_PIN 25
+#define LED_PIN 4
 
-#define BUTTON_LEFT 12
-#define BUTTON_MID  13
-#define BUTTON_RIGHT 14
+#define BUTTON_LEFT 19
+#define BUTTON_MID  18
+#define BUTTON_RIGHT 5
 
 /* ===================== Display ===================== */
 #define SCREEN_WIDTH 128
@@ -268,6 +268,20 @@ void handleButtons() {
   bool mid = digitalRead(BUTTON_MID);
   bool right = digitalRead(BUTTON_RIGHT);
   unsigned long now = millis();
+
+  if (displaySleeping) {
+    bool wakePress = (left == LOW && prevLeft == HIGH) ||
+                     (mid == LOW && prevMid == HIGH) ||
+                     (right == LOW && prevRight == HIGH);
+    if (wakePress) {
+      displaySleeping = false;
+      display.oled_command(SH110X_DISPLAYON);
+    }
+    prevLeft = left;
+    prevMid = mid;
+    prevRight = right;
+    return;
+  }
 
   if (left == LOW && prevLeft == HIGH && (now - lastLeftPressMs) >= BUTTON_DEBOUNCE_MS) {
     lastLeftPressMs = now;
