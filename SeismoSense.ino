@@ -111,7 +111,7 @@ bool prevMid = HIGH;
 bool prevRight = HIGH;
 unsigned long midPressStart = 0;
 const unsigned long LONG_PRESS_MS = 700;
-const unsigned long BUTTON_DEBOUNCE_MS = 180;
+const unsigned long BUTTON_DEBOUNCE_MS = 60;
 bool editingThreshold = false;
 unsigned long lastLeftPressMs = 0;
 unsigned long lastMidPressMs = 0;
@@ -288,10 +288,10 @@ void handleButtons() {
     if (currentMenu == THRESHOLD_MENU && cursorPosition == 2 && editingThreshold) {
       if (currentMode == MAGNITUDE) {
         magnitudeThreshold -= 0.1;
-        if (magnitudeThreshold < 1.0) magnitudeThreshold = 5.0;
+        if (magnitudeThreshold < 1.0) magnitudeThreshold = 1.0;
       } else {
         ratioThreshold -= 0.1;
-        if (ratioThreshold < 1.0) ratioThreshold = 5.0;
+        if (ratioThreshold < 1.0) ratioThreshold = 1.0;
       }
     } else {
       cursorPosition = max(cursorPosition - 1, 0);
@@ -303,10 +303,10 @@ void handleButtons() {
     if (currentMenu == THRESHOLD_MENU && cursorPosition == 2 && editingThreshold) {
       if (currentMode == MAGNITUDE) {
         magnitudeThreshold += 0.1;
-        if (magnitudeThreshold > 5.0) magnitudeThreshold = 1.0;
+        if (magnitudeThreshold > 5.0) magnitudeThreshold = 5.0;
       } else {
         ratioThreshold += 0.1;
-        if (ratioThreshold > 5.0) ratioThreshold = 1.0;
+        if (ratioThreshold > 5.0) ratioThreshold = 5.0;
       }
     } else {
       int maxCursor = (currentMenu == MAIN_MENU) ? 1 : 2;
@@ -319,8 +319,16 @@ void handleButtons() {
     lastMidPressMs = now;
   }
 
-  if (mid == HIGH && prevMid == LOW && (now - lastMidPressMs) >= BUTTON_DEBOUNCE_MS) {
-    bool isLong = (now - midPressStart) >= LONG_PRESS_MS;
+  if (mid == HIGH && prevMid == LOW) {
+    unsigned long pressDuration = now - midPressStart;
+    if (pressDuration < BUTTON_DEBOUNCE_MS) {
+      prevLeft = left;
+      prevMid = mid;
+      prevRight = right;
+      return;
+    }
+
+    bool isLong = pressDuration >= LONG_PRESS_MS;
     lastMidPressMs = now;
 
     if (isLong) {
